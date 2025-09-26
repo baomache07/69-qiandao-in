@@ -2,7 +2,7 @@ name: Scheduled Check-In Job
 
 on:
   schedule:
-    - cron: '0 6 * * *'  # 每天 00:00 UTC 执行，调整为你需要的时间
+    - cron: '0 0 * * *'  # 北京时间 08:00 执行
   workflow_dispatch:  # 允许手动触发
 
 jobs:
@@ -33,4 +33,4 @@ jobs:
         PASSWORD: ${{ secrets.PASSWORD }}
         TG_TOKEN: ${{ secrets.TG_TOKEN }}
         TG_ID: ${{ secrets.TG_ID }}
-        PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+        PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}  # 新增 Pushplus token
