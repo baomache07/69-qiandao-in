@@ -4,6 +4,7 @@ let password = "Enter your password here";
 let token; 
 let botToken = '';  
 let chatId = '';  
+let pushplusToken = '';  // 新增 Pushplus token
 let checkInResult;
 let jcType = '69yun69';  
  // 初始化变量
@@ -22,7 +23,8 @@ if (typeof globalThis.fetch === "undefined") {
         PASSWORD: process.env.PASSWORD,
         TOKEN: process.env.TOKEN,
         TG_TOKEN: process.env.TG_TOKEN,
-        TG_ID: process.env.TG_ID
+        TG_ID: process.env.TG_ID,
+        PUSHPLUS_TOKEN: process.env.PUSHPLUS_TOKEN  // 新增 Pushplus token
     };
    //console.log("在 Node.js 环境中env",env);
 
@@ -35,7 +37,11 @@ if (typeof globalThis.fetch === "undefined") {
                 console.log("定时任务成功完成");
             } catch (error) {
                 console.error("定时任务失败:", error);
-                await sendMessage(`${jcType}定时任务失败: ${error.message}`);
+                const errorMsg = `${jcType}定时任务失败: ${error.message}`;
+                await Promise.allSettled([
+                    sendMessage(errorMsg),
+                    sendPushplusMessage(errorMsg)
+                ]);
             }
         }
     };
@@ -77,7 +83,11 @@ export default {
             console.log("定时任务成功完成");
         } catch (error) {
             console.error("定时任务失败:", error);
-            await sendMessage(`${jcType}定时任务失败: ${error.message}`);
+            const errorMsg = `${jcType}定时任务失败: ${error.message}`;
+            await Promise.allSettled([
+                sendMessage(errorMsg),
+                sendPushplusMessage(errorMsg)
+            ]);
         }
     },
 };
@@ -98,12 +108,23 @@ async function handleCheckIn() {
           checkInResult = await performCheckIn(cookies);
         }
  
-        await sendMessage(checkInResult);
+        // 同时发送 Telegram 和 Pushplus 消息
+        await Promise.allSettled([
+            sendMessage(checkInResult),
+            sendPushplusMessage(checkInResult)
+        ]);
+        
         return new Response(checkInResult, { status: 200 });
     } catch (error) {
         console.error("签到失败:", error);
-        const errorMsg = `${checkInResult}\n🎁${error.message}`;
-        await sendMessage(errorMsg);
+        const errorMsg = `${checkInResult}\n🎁🎁${error.message}`;
+        
+        // 同时发送错误消息到两个平台
+        await Promise.allSettled([
+            sendMessage(errorMsg),
+            sendPushplusMessage(errorMsg)
+        ]);
+        
         return new Response(errorMsg, { status: 500 });
     }
 }
@@ -170,7 +191,7 @@ async function performCheckIn(cookies) {
         throw new Error(`${jcType}签到失败: ${jsonResponse.msg || "未知错误"}`);
     }
 
-    return `🎉 ${jcType}签到结果 🎉\n${jsonResponse.msg || "签到完成"}`;
+    return `🎉🎉 ${jcType}签到结果 🎉🎉🎉\n${jsonResponse.msg || "签到完成"}`;
 }
 
 async function hongxingdlCheckIn() {
@@ -202,7 +223,7 @@ async function hongxingdlCheckIn() {
       ? `，您获得了 ${(bytesToMB / 1024).toFixed(3)} GB 流量.` 
       : `，您获得了 ${bytesToMB.toFixed(3)} MB 流量.` 
     ) : '';
-    return `🎉 ${jcType}签到结果 🎉\n${jsonResponse.data?.mag ?? "签到完成"}${str}`;
+    return `🎉🎉 ${jcType}签到结果 🎉🎉🎉\n${jsonResponse.data?.mag ?? "签到完成"}${str}`;
 }
 
 
@@ -274,6 +295,50 @@ async function sendMessage(msg) {
     }
 }
 
+async function sendPushplusMessage(msg) {
+    if (!pushplusToken) {
+        console.log("Pushplus 推送未启用. 消息内容:", msg);
+        return;
+    }
+
+    const now = new Date();
+    const formattedTime = new Date(now.getTime() + 8 * 60 * 60 * 1000)
+        .toISOString()
+        .slice(0, 19)
+        .replace("T", " ");
+
+    const messageText = `执行时间: ${formattedTime}\n${msg}`;
+
+    const payload = {
+        token: pushplusToken,
+        title: `${jcType}签到通知`,
+        content: messageText,
+        template: "txt"
+    };
+
+    try {
+        const response = await fetch('https://www.pushplus.plus/send', {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(payload)
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || data.code !== 200) {
+            console.error("Pushplus 消息发送失败:", data);
+            return `Pushplus 消息发送失败: ${data.msg || '未知错误'}`;
+        }
+
+        console.log("Pushplus 消息发送成功:", data);
+        return messageText;
+    } catch (error) {
+        console.error("发送 Pushplus 消息失败:", error);
+        return `发送 Pushplus 消息失败: ${error.message}`;
+    }
+}
 
 function formatDomain(domain) {
     return domain.includes("//") ? domain : `https://${domain}`;
@@ -310,13 +375,15 @@ async function initConfig(env) {
     botToken = env.TG_TOKEN || botToken;  
     chatId = env.TG_ID || chatId; 
     jcType = env.JC_TYPE || jcType; 
+    pushplusToken = env.PUSHPLUS_TOKEN || pushplusToken; // 新增 Pushplus token
     
     checkInResult = `配置信息: 
     机场类型: ${jcType} 
     登录地址: ${maskSensitiveData(domain, 'url')} 
     登录账号: ${maskSensitiveData(username, 'email')} 
     登录密码: ${maskSensitiveData(password)} 
-    TG 推送:  ${botToken && chatId ? "已启用" : "未启用"} `;
+    TG 推送:  ${botToken && chatId ? "已启用" : "未启用"} 
+    Pushplus 推送: ${pushplusToken ? "已启用" : "未启用"}`; // 新增 Pushplus 状态
  
     //console.log("initConfig-->", checkInResult);
 }
